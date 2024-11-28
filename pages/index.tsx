@@ -1,115 +1,158 @@
-import Image from "next/image";
-import localFont from "next/font/local";
+import { useLoadScript, GoogleMap, MarkerF, CircleF } from '@react-google-maps/api';
+import { NextPage } from 'next';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import usePlacesAutocomplete, { getGeocode, getLatLng } from 'use-places-autocomplete';
+import styles from '../styles/Home.module.css';
+import PlacesAutocomplete from '../components/PlacesAutocomplete';
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
+const Home: NextPage = () => {
+  const [lat, setLat] = useState(27.672932021393862); // Default coordinates
+  const [lng, setLng] = useState(85.31184012689732); // Default coordinates
+  const [zoom, setZoom] = useState(14); // Default zoom level
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null); // Store directions
+  const [userLocation, setUserLocation] = useState<google.maps.LatLng | null>(null); // Store user location
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
-export default function Home() {
+  const libraries = useMemo(() => ['places'], []);
+  const mapCenter = useMemo(() => ({ lat, lng }), [lat, lng]);
+
+  const mapOptions = useMemo<google.maps.MapOptions>(
+    () => ({
+      disableDefaultUI: false,
+      clickableIcons: true,
+      scrollwheel: true,
+      zoomControl: true,
+    }),
+    []
+  );
+
+  const { isLoaded } = useLoadScript({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string,
+    libraries: ['places'],
+  });
+
+  if (!isLoaded) {
+    return <p>Loading...</p>;
+  }
+
+  // Initialize Directions Service and Renderer once map is loaded
+  const onMapLoad = (map: google.maps.Map) => {
+    mapRef.current = map;
+    directionsServiceRef.current = new google.maps.DirectionsService();
+    directionsRendererRef.current = new google.maps.DirectionsRenderer();
+    directionsRendererRef.current.setMap(map);
+    getCurrentLocation(map); // Fetch user's current location and set marker
+  };
+
+  // Fetch the user's current location
+  const getCurrentLocation = (map: google.maps.Map) => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const userLoc = new google.maps.LatLng(latitude, longitude);
+          setUserLocation(userLoc); // Set user location
+          setLat(latitude);
+          setLng(longitude);
+          setZoom(14); // Zoom to user location
+        },
+        (error) => {
+          console.error('Error fetching location:', error);
+        }
+      );
+    }
+  };
+
+  // Handle address selection from PlacesAutocomplete
+  const handleAddressSelect = (address: string) => {
+    getGeocode({ address }).then((results) => {
+      const { lat, lng } = getLatLng(results[0]);
+      setLat(lat);
+      setLng(lng);
+      setZoom(14); // Reset zoom level after selecting an address
+    });
+  };
+
+  // Handle the directions request
+  const handleDirections = (origin: google.maps.LatLng | google.maps.LatLngLiteral, destination: google.maps.LatLng | google.maps.LatLngLiteral) => {
+    const request: google.maps.DirectionsRequest = {
+      origin,
+      destination,
+      travelMode: google.maps.TravelMode.DRIVING,
+    };
+
+    directionsServiceRef.current?.route(request, (result, status) => {
+      if (status === google.maps.DirectionsStatus.OK) {
+        setDirections(result); // Set the directions result to state
+        directionsRendererRef.current?.setDirections(result); // Display directions on the map
+      } else {
+        console.error('Directions request failed due to', status);
+      }
+    });
+  };
+
+  // Trigger directions calculation
+  const onDirectionButtonClick = () => {
+    if (userLocation && mapCenter) {
+      handleDirections(userLocation, mapCenter); // Trigger directions from user location to destination
+    } else {
+      console.log('User location or map center is undefined');
+    }
+  };
+
   return (
-    <div
-      className={`${geistSans.variable} ${geistMono.variable} grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]`}
-    >
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              pages/index.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className={styles.homeWrapper}>
+      <div className={styles.sidebar}>
+        {/* Button to trigger directions */}
+        <button onClick={onDirectionButtonClick}>Get Directions</button>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+        {/* Pass the address selection handler */}
+        <PlacesAutocomplete onAddressSelect={handleAddressSelect} />
+      </div>
+
+      <GoogleMap
+        options={mapOptions}
+        zoom={zoom}
+        center={mapCenter}
+        mapTypeId={google.maps.MapTypeId.ROADMAP}
+        mapContainerStyle={{ width: '80%', height: '100vh' }}
+        onLoad={onMapLoad} // Initialize map and load user location
+      >
+        {/* User's current location marker */}
+        {userLocation && (
+          <MarkerF
+            position={userLocation}
+            icon={{
+              url: 'https://maps.google.com/mapfiles/kml/shapes/man.png', // Custom icon for "human-like" figure
+              scaledSize: new google.maps.Size(32, 32), // Size of the marker
+            }}
+            onClick={() => onDirectionButtonClick()} // Use the same function as the button
+            onLoad={() => console.log('User Location Marker Loaded')}
+          />
+        )}
+
+        <MarkerF position={mapCenter} onLoad={() => console.log('Destination Marker Loaded')} />
+
+        {[1000, 2500].map((radius, idx) => {
+          return (
+            <CircleF
+              key={idx}
+              center={mapCenter}
+              radius={radius}
+              onLoad={() => console.log('Circle Load...')}
+              options={{
+                fillColor: radius > 1000 ? 'red' : 'green',
+                strokeColor: radius > 1000 ? 'red' : 'green',
+                strokeOpacity: 0.8,
+              }}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          );
+        })}
+      </GoogleMap>
     </div>
   );
-}
+};
+
+export default Home;
